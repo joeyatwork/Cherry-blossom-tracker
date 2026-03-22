@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Seattle Cherry Blossom Tracker</title>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA6MSCLaJLst_nw0P6cvpGHx0WUZS7DzzY"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', 'Helvetica Neue', sans-serif; background: #f5f0eb; color: #1a1a2e; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+  #app { display: flex; flex: 1; overflow: hidden; }
+  #sidebar { width: 340px; min-width: 340px; background: #fdf8f5; border-right: 1px solid #ede5dc; display: flex; flex-direction: column; overflow: hidden; z-index: 100; }
+  #sidebar-header { padding: 16px 20px 12px; border-bottom: 1px solid #ede5dc; }
+  #sidebar-header h1 { font-family: Georgia, serif; font-size: 18px; font-weight: bold; line-height: 1.2; }
+  .badge { display: inline-block; background: #d63f6b; color: white; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 700; letter-spacing: .5px; margin-top: 6px; }
+  .meta { font-size: 11px; color: #6b6070; margin-top: 4px; }
+  #stage-filter { padding: 12px 20px; border-bottom: 1px solid #ede5dc; }
+  .section-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #6b6070; text-transform: uppercase; margin-bottom: 8px; }
+  .stage-row { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 3px 0; transition: opacity .15s; user-select: none; }
+  .stage-row.off { opacity: 0.3; }
+  .stage-dot { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid rgba(0,0,0,.12); flex-shrink: 0; }
+  .stage-name { font-size: 12px; flex: 1; }
+  .stage-count { font-size: 10px; color: #6b6070; }
+  #tabs { display: flex; border-bottom: 1px solid #ede5dc; }
+  .tab { flex: 1; padding: 10px 4px; text-align: center; font-size: 11px; font-weight: 600; cursor: pointer; color: #6b6070; border-bottom: 2px solid transparent; transition: all .15s; }
+  .tab.active { color: #d63f6b; border-bottom-color: #d63f6b; }
+  #tab-content { flex: 1; overflow-y: auto; padding: 16px 20px; }
+  .section-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+  .card { background: white; border: 1px solid #ede5dc; border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; }
+  .card-highlight { background: #fff9f6; border-color: #f0e4da; }
+  .row-between { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .refresh-btn { font-size: 11px; background: none; border: 1px solid #d63f6b; color: #d63f6b; border-radius: 12px; padding: 3px 10px; cursor: pointer; font-weight: 600; }
+  .refresh-btn:hover { background: #d63f6b; color: white; }
+  .forecast-text { font-size: 13px; line-height: 1.7; }
+  .spot-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; margin-bottom: 4px; cursor: pointer; background: white; border: 1px solid #ede5dc; transition: all .1s; }
+  .spot-row:hover, .spot-row.sel { background: #fdeef3; border-color: #f0b8c8; }
+  .spot-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .spot-name { font-size: 12px; font-weight: 600; }
+  .spot-stage { font-size: 10px; color: #6b6070; }
+  .input-label { font-size: 11px; font-weight: 700; color: #6b6070; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
+  input[type=date] { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 12px; font-family: inherit; margin-bottom: 8px; }
+  .primary-btn { width: 100%; background: #d63f6b; color: white; border: none; border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; margin-bottom: 12px; }
+  .primary-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .detail-label { font-size: 10px; font-weight: 700; color: #6b6070; text-transform: uppercase; letter-spacing: .5px; }
+  .detail-value { font-size: 12px; margin-top: 2px; }
+  .detail-full { grid-column: 1 / -1; }
+  #map { flex: 1; height: 100%; }
+  #map-wrap { flex: 1; position: relative; }
+  #legend { position: absolute; bottom: 30px; right: 10px; background: rgba(253,248,245,.95); border: 1px solid #e8e0d8; border-radius: 10px; padding: 10px 14px; font-size: 11px; z-index: 99; pointer-events: none; }
+  .leg-title { font-weight: 700; margin-bottom: 6px; color: #6b6070; letter-spacing: .5px; text-transform: uppercase; }
+  .leg-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+  .leg-dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0,0,0,.1); }
+  .muted { font-size: 12px; color: #6b6070; font-style: italic; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <h1>🌸 Seattle Cherry Blossom Tracker</h1>
+      <div class="badge">★ PEAK BLOOM IN PROGRESS</div>
+      <div class="meta">March 21, 2026 · 15 locations tracked</div>
+    </div>
+    <div id="stage-filter">
+      <div class="section-label">Filter by Stage</div>
+      <div id="stage-list"></div>
+    </div>
+    <div id="tabs">
+      <div class="tab active" data-tab="forecast">🌤 Forecast</div>
+      <div class="tab" data-tab="visit">📅 Plan Visit</div>
+      <div class="tab" data-tab="detail">📍 Location</div>
+    </div>
+    <div id="tab-content">
+      <div id="pane-forecast">
+        <div class="row-between">
+          <div class="section-title">Today's Bloom Forecast</div>
+          <button class="refresh-btn" id="refresh-btn">↻ Refresh</button>
+        </div>
+        <div class="card card-highlight" style="margin-bottom:14px">
+          <div class="forecast-text muted" id="forecast-text">Generating forecast...</div>
+        </div>
+        <div class="section-title">Today's Top Spots</div>
+        <div id="top-spots"></div>
+      </div>
+      <div id="pane-visit" style="display:none">
+        <div class="section-title">Plan My Visit</div>
+        <p style="font-size:12px;color:#6b6070;margin-bottom:12px">Enter your dates to get the best spots.</p>
+        <div class="input-label">ARRIVING</div>
+        <input type="date" id="visit-start" />
+        <div class="input-label">LEAVING</div>
+        <input type="date" id="visit-end" />
+        <button class="primary-btn" id="visit-btn">Find My Top Spots →</button>
+        <div id="visit-results"></div>
+      </div>
+      <div id="pane-detail" style="display:none">
+        <div id="detail-content"><p class="muted">Click a pin on the map to see details.</p></div>
+      </div>
+    </div>
+  </div>
+  <div id="map-wrap">
+    <div id="map"></div>
+    <div id="legend">
+      <div class="leg-title">Bloom Stages</div>
+      <div class="leg-row"><div class="leg-dot" style="background:#b0b8a8"></div><span>Dormant</span></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#c8d5b9"></div><span>Bud Swell</span></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#f2c4ce"></div><span>Florets Visible</span></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#e8829a"></div><span>30% Bloom</span></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#d63f6b"></div><span>Peak Bloom ★</span></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#c084a0"></div><span>Petal Fall</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const STAGES = [
+  { id:1, name:"Dormant",         color:"#b0b8a8" },
+  { id:2, name:"Bud Swell",       color:"#c8d5b9" },
+  { id:3, name:"Florets Visible", color:"#f2c4ce" },
+  { id:4, name:"30% Bloom",       color:"#e8829a" },
+  { id:5, name:"Peak Bloom \u2605", color:"#d63f6b" },
+  { id:6, name:"Petal Fall",      color:"#c084a0" },
+];
+
+const LOCS = [
+  { id:1,  name:"UW Quad",                   hood:"University District", addr:"Memorial Way NE",             stage:5, verified:"Mar 21, 9:00 AM",  lat:47.6557, lng:-122.3087, note:"Yoshino trees at full canopy. Go before 9am to beat crowds." },
+  { id:2,  name:"Seattle Japanese Garden",   hood:"Madison Valley",      addr:"1075 Lake Washington Blvd E", stage:5, verified:"Mar 21, 8:30 AM",  lat:47.6391, lng:-122.2967, note:"Kwanzan variety. Peak through Mar 24." },
+  { id:3,  name:"Seward Park",               hood:"Seward Park",         addr:"5902 Lake Washington Blvd S", stage:4, verified:"Mar 20, 3:00 PM",  lat:47.5506, lng:-122.2532, note:"30% open along the loop trail." },
+  { id:4,  name:"Washington Park Arboretum", hood:"Montlake",            addr:"2300 Arboretum Dr E",          stage:5, verified:"Mar 21, 7:45 AM",  lat:47.6404, lng:-122.2944, note:"Multiple varieties. Azalea Way is stunning." },
+  { id:5,  name:"Volunteer Park",            hood:"Capitol Hill",        addr:"1247 15th Ave E",              stage:4, verified:"Mar 20, 5:00 PM",  lat:47.6374, lng:-122.3151, note:"Approaching peak. Expect full bloom Mar 23." },
+  { id:6,  name:"Green Lake Park",           hood:"Green Lake",          addr:"7201 E Green Lake Dr N",       stage:3, verified:"Mar 20, 2:00 PM",  lat:47.6808, lng:-122.3268, note:"Florets visible on east shore path." },
+  { id:7,  name:"Judkins Park",              hood:"Central District",    addr:"2150 S Norman St",             stage:4, verified:"Mar 20, 1:00 PM",  lat:47.5938, lng:-122.2999, note:"Akebono trees near tennis courts." },
+  { id:8,  name:"Bradner Gardens",           hood:"Mount Baker",         addr:"29th Ave S & S Grand St",      stage:3, verified:"Mar 19, 4:00 PM",  lat:47.5754, lng:-122.2948, note:"Community garden. Early stage." },
+  { id:9,  name:"Viretta Park",              hood:"Denny-Blaine",        addr:"151 Lake Washington Blvd E",   stage:5, verified:"Mar 21, 10:00 AM", lat:47.6273, lng:-122.2832, note:"Hidden gem. Peak bloom right now." },
+  { id:10, name:"Cal Anderson Park",         hood:"Capitol Hill",        addr:"1635 11th Ave",                stage:4, verified:"Mar 20, 6:00 PM",  lat:47.6163, lng:-122.3197, note:"Street trees on 11th approaching peak." },
+  { id:11, name:"Interlaken Park",           hood:"Capitol Hill",        addr:"Interlaken Dr E",              stage:3, verified:"Mar 19, 3:00 PM",  lat:47.6322, lng:-122.3041, note:"Florets emerging along drive." },
+  { id:12, name:"Colman Park",               hood:"Leschi",              addr:"1800 Lake Washington Blvd S",  stage:4, verified:"Mar 20, 4:30 PM",  lat:47.6008, lng:-122.2832, note:"Good lake view backdrop." },
+  { id:13, name:"Ravenna Park",              hood:"Ravenna",             addr:"5520 Ravenna Ave NE",          stage:2, verified:"Mar 18, 2:00 PM",  lat:47.6741, lng:-122.3054, note:"Early season. Buds swelling." },
+  { id:14, name:"Lincoln Park",              hood:"West Seattle",        addr:"8011 Fauntleroy Way SW",       stage:2, verified:"Mar 18, 1:00 PM",  lat:47.5318, lng:-122.3940, note:"West Seattle lagging by ~1 week." },
+  { id:15, name:"Kubota Garden",             hood:"Rainier Beach",       addr:"9817 55th Ave S",              stage:3, verified:"Mar 20, 11:00 AM", lat:47.5097, lng:-122.2633, note:"Traditional Japanese garden. Serene." },
+];
+
+const stageColor = s => STAGES[s-1].color;
+const stageName  = s => STAGES[s-1].name;
+
+let activeStages = new Set([1,2,3,4,5,6]);
+let selectedLoc  = LOCS.find(l => l.stage === 5);
+let gmap, infoWindow;
+const gmarkers = {};
+
+function initMap() {
+  gmap = new google.maps.Map(document.getElementById("map"), {
+    center: { lat:47.62, lng:-122.32 },
+    zoom: 12,
+    mapTypeId: "roadmap",
+    mapTypeControl: false,
+    fullscreenControl: false,
+    styles: [
+      { featureType:"water",         elementType:"geometry",         stylers:[{ color:"#b8d4e8" }] },
+      { featureType:"landscape",     elementType:"geometry",         stylers:[{ color:"#f0ede8" }] },
+      { featureType:"road",          elementType:"geometry",         stylers:[{ color:"#ffffff" }] },
+      { featureType:"road.arterial", elementType:"geometry",         stylers:[{ color:"#ede5dc" }] },
+      { featureType:"poi.park",      elementType:"geometry",         stylers:[{ color:"#ddeedd" }] },
+      { featureType:"all",           elementType:"labels.text.fill", stylers:[{ color:"#6b6070" }] },
+    ]
+  });
+  infoWindow = new google.maps.InfoWindow();
+  renderMarkers();
+}
+
+function makeIcon(stage, isSel) {
+  return {
+    path: google.maps.SymbolPath.CIRCLE,
+    fillColor: stageColor(stage),
+    fillOpacity: 1,
+    strokeColor: isSel ? "#1a1a2e" : "#ffffff",
+    strokeWeight: isSel ? 3 : 2,
+    scale: isSel ? 14 : 11,
+  };
+}
+
+function renderMarkers() {
+  Object.values(gmarkers).forEach(m => m.setMap(null));
+  Object.keys(gmarkers).forEach(k => delete gmarkers[k]);
+  LOCS.filter(l => activeStages.has(l.stage)).forEach(loc => {
+    const isSel = selectedLoc && selectedLoc.id === loc.id;
+    const m = new google.maps.Marker({
+      position: { lat: loc.lat, lng: loc.lng },
+      map: gmap,
+      icon: makeIcon(loc.stage, isSel),
+      title: loc.name,
+      zIndex: isSel ? 999 : (loc.stage === 5 ? 10 : 1),
+    });
+    if (loc.stage === 5) {
+      m.setAnimation(google.maps.Animation.BOUNCE);
+      setTimeout(() => m.setAnimation(null), 1400);
+    }
+    m.addListener("click", () => selectLoc(loc, m));
+    gmarkers[loc.id] = m;
+  });
+}
+
+function selectLoc(loc, marker) {
+  selectedLoc = loc;
+  renderMarkers();
+  renderDetail();
+  switchTab("detail");
+  gmap.panTo({ lat: loc.lat, lng: loc.lng });
+  if (gmap.getZoom() < 14) gmap.setZoom(14);
+  if (marker) {
+    infoWindow.setContent(
+      '<div style="font-family:Georgia,serif;font-size:14px;font-weight:bold;margin-bottom:4px">' + loc.name + '</div>' +
+      '<span style="background:' + stageColor(loc.stage) + ';color:white;border-radius:12px;padding:2px 8px;font-size:11px;font-weight:700">' + stageName(loc.stage) + '</span>' +
+      '<div style="font-size:11px;color:#666;margin-top:6px">' + loc.addr + '</div>' +
+      '<div style="font-size:11px;font-style:italic;margin-top:4px;max-width:200px">' + loc.note + '</div>'
+    );
+    infoWindow.open(gmap, marker);
+  }
+  renderTopSpots();
+}
+
+function renderStageFilter() {
+  const el = document.getElementById("stage-list");
+  el.innerHTML = STAGES.map(s => {
+    const cnt = LOCS.filter(l => l.stage === s.id).length;
+    return '<div class="stage-row' + (!activeStages.has(s.id) ? ' off' : '') + '" data-id="' + s.id + '">' +
+      '<div class="stage-dot" style="background:' + s.color + '"></div>' +
+      '<span class="stage-name">' + s.name + '</span>' +
+      '<span class="stage-count">' + cnt + '</span></div>';
+  }).join('');
+  el.querySelectorAll('.stage-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const id = parseInt(row.dataset.id);
+      activeStages.has(id) ? activeStages.delete(id) : activeStages.add(id);
+      renderStageFilter();
+      renderMarkers();
+      renderTopSpots();
+    });
+  });
+}
+
+function renderTopSpots() {
+  const el = document.getElementById("top-spots");
+  const spots = LOCS.filter(l => l.stage >= 4).sort((a,b) => b.stage - a.stage).slice(0, 4);
+  el.innerHTML = spots.map(l =>
+    '<div class="spot-row' + (selectedLoc && selectedLoc.id === l.id ? ' sel' : '') + '" data-id="' + l.id + '">' +
+    '<div class="spot-dot" style="background:' + stageColor(l.stage) + '"></div>' +
+    '<div><div class="spot-name">' + l.name + '</div><div class="spot-stage">' + stageName(l.stage) + '</div></div></div>'
+  ).join('');
+  el.querySelectorAll('.spot-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const loc = LOCS.find(l => l.id === parseInt(row.dataset.id));
+      if (loc) selectLoc(loc, gmarkers[loc.id]);
+    });
+  });
+}
+
+function renderDetail() {
+  const el = document.getElementById("detail-content");
+  if (!selectedLoc) { el.innerHTML = '<p class="muted">Click a pin on the map to see details.</p>'; return; }
+  const l = selectedLoc;
+  el.innerHTML =
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">' +
+      '<div style="width:14px;height:14px;border-radius:50%;background:' + stageColor(l.stage) + ';border:2px solid rgba(0,0,0,.1);flex-shrink:0"></div>' +
+      '<div style="font-family:Georgia,serif;font-size:16px;font-weight:bold">' + l.name + '</div>' +
+    '</div>' +
+    '<div class="card card-highlight" style="margin-bottom:10px"><div class="detail-grid">' +
+      '<div><div class="detail-label">Stage</div><div class="detail-value" style="color:' + stageColor(l.stage) + ';font-weight:600">' + stageName(l.stage) + '</div></div>' +
+      '<div><div class="detail-label">Last Verified</div><div class="detail-value">' + l.verified + '</div></div>' +
+      '<div class="detail-full"><div class="detail-label">Address</div><div class="detail-value">' + l.addr + '</div></div>' +
+      '<div class="detail-full"><div class="detail-label">Neighborhood</div><div class="detail-value">' + l.hood + '</div></div>' +
+    '</div></div>' +
+    '<div class="card"><div class="detail-label" style="margin-bottom:4px">Field Note</div>' +
+    '<div style="font-size:12px;line-height:1.6;font-style:italic">"' + l.note + '"</div></div>';
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  ['forecast','visit','detail'].forEach(n => {
+    document.getElementById('pane-' + n).style.display = n === name ? 'block' : 'none';
+  });
+}
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+async function fetchForecast() {
+  const el = document.getElementById('forecast-text');
+  el.className = 'forecast-text muted';
+  el.textContent = 'Generating forecast...';
+  const peak = LOCS.filter(l => l.stage === 5).map(l => l.name).join(', ');
+  const near = LOCS.filter(l => l.stage === 4).map(l => l.name).join(', ');
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        system: 'You are a friendly Seattle cherry blossom expert. Write a 3-sentence daily bloom forecast in a warm editorial tone. Today is March 21, 2026. Peak bloom: ' + peak + '. Approaching peak: ' + near + '. Earlier stages at Green Lake, Ravenna, Lincoln Park, Kubota Garden. No markdown.',
+        messages: [{ role: 'user', content: "Write today's bloom forecast." }]
+      })
+    });
+    const data = await res.json();
+    const txt = data.content && data.content.find(b => b.type === 'text') ? data.content.find(b => b.type === 'text').text : 'Forecast unavailable.';
+    el.className = 'forecast-text';
+    el.textContent = txt;
+  } catch(e) {
+    el.textContent = 'Forecast temporarily unavailable. Try again.';
+  }
+}
+document.getElementById('refresh-btn').addEventListener('click', fetchForecast);
+
+document.getElementById('visit-btn').addEventListener('click', async () => {
+  const start = document.getElementById('visit-start').value;
+  const end   = document.getElementById('visit-end').value;
+  if (!start || !end) return;
+  const btn = document.getElementById('visit-btn');
+  const el  = document.getElementById('visit-results');
+  btn.textContent = 'Finding spots...'; btn.disabled = true; el.innerHTML = '';
+  const locData = LOCS.map(l => l.name + ' stage ' + l.stage + ' ' + stageName(l.stage)).join('; ');
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 600,
+        system: 'You are a Seattle cherry blossom expert. Recommend top 3 spots for a visitor. Today is March 21 2026. Peak bloom lasts 7-10 days. Locations: ' + locData + '. Return ONLY a JSON array of 3 objects: name, timing, reason, tip. No markdown.',
+        messages: [{ role: 'user', content: 'Visitor arriving ' + start + ' leaving ' + end + '. Top 3 spots?' }]
+      })
+    });
+    const data = await res.json();
+    const txt  = data.content && data.content.find(b => b.type === 'text') ? data.content.find(b => b.type === 'text').text : '[]';
+    const recs = JSON.parse(txt.replace(/```json|```/g,'').trim());
+    el.innerHTML = recs.map((r, i) =>
+      '<div class="card" style="margin-bottom:8px">' +
+        '<div style="display:flex;gap:10px;align-items:flex-start">' +
+          '<div style="background:#d63f6b;color:white;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">' + (i+1) + '</div>' +
+          '<div>' +
+            '<div style="font-size:13px;font-weight:700">' + r.name + '</div>' +
+            '<div style="font-size:11px;color:#d63f6b;font-weight:600;margin-top:1px">' + r.timing + '</div>' +
+            '<div style="font-size:11px;margin-top:4px;line-height:1.5">' + r.reason + '</div>' +
+            '<div style="font-size:11px;color:#6b6070;margin-top:4px;font-style:italic">&#128161; ' + r.tip + '</div>' +
+          '</div>' +
+        '</div></div>'
+    ).join('');
+  } catch(e) {
+    el.innerHTML = '<p class="muted">Could not load recommendations. Try again.</p>';
+  }
+  btn.textContent = 'Find My Top Spots \u2192'; btn.disabled = false;
+});
+
+renderStageFilter();
+renderTopSpots();
+renderDetail();
+fetchForecast();
+window.addEventListener('load', initMap);
+</script>
+</body>
+</html>
